@@ -58,7 +58,7 @@ app.post("/tools/call", async (req, res) => {
     const N8N_SECRET = process.env.N8N_SECRET;
 
     const webhookMap = {
-      check_availability: "/webhook-test/impasto48/checkAvailablity"
+      check_availability: "/webhook/impasto48/checkAvailablity"
     };
 
     const webhookPath = webhookMap[name];

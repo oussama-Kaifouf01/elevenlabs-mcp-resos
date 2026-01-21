@@ -13,10 +13,3 @@ COPY . .
 
 # Run the MCP server
 CMD ["node", "mcp-server.js"]
-```
-
-**Step 2: Create a .dockerignore file**
-```
-node_modules
-.env
-.git

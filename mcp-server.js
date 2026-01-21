@@ -15,8 +15,7 @@ function startMCPServer() {
     stdio: ["pipe", "pipe", "inherit"],
     env: {
       ...process.env,
-      N8N_BASE_URL: process.env.N8N_BASE_URL,
-      N8N_SECRET: process.env.N8N_SECRET
+      N8N_BASE_URL: process.env.N8N_BASE_URL
     }
   });
 
@@ -55,7 +54,6 @@ app.post("/tools/call", async (req, res) => {
 
   try {
     const N8N_BASE_URL = process.env.N8N_BASE_URL;
-    const N8N_SECRET = process.env.N8N_SECRET;
 
     const webhookMap = {
       check_availability: "/webhook/impasto48/checkAvailablity"
@@ -69,8 +67,7 @@ app.post("/tools/call", async (req, res) => {
     const response = await fetch(`${N8N_BASE_URL}${webhookPath}`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        ...(N8N_SECRET && { "x-mcp-secret": N8N_SECRET })
+        "Content-Type": "application/json"
       },
       body: JSON.stringify(args)
     });

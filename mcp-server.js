@@ -1,14 +1,21 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
 
 const N8N_BASE_URL = process.env.N8N_BASE_URL || "http://n8n:5678";
-const N8N_SECRET = process.env.N8N_SECRET;
-
-const server = new Server({
-  name: "reservation-mcp-server",
-  version: "1.0.0",
-});
+console.log(N8N_BASE_URL);
+const server = new Server(
+  {
+    name: "reservation-mcp-server",
+    version: "1.0.0",
+  },
+  {
+    capabilities: {
+      tools: {},
+    },
+  }
+);
 
 // Define your n8n workflows as MCP tools
 const tools = [
@@ -29,12 +36,12 @@ const tools = [
 ];
 
 // List available tools
-server.setRequestHandler("tools/list", async () => {
+server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools };
 });
 
 // Handle tool calls - route to n8n webhooks
-server.setRequestHandler("tools/call", async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
@@ -51,8 +58,7 @@ server.setRequestHandler("tools/call", async (request) => {
     const response = await fetch(`${N8N_BASE_URL}${webhookPath}`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        ...(N8N_SECRET && { "x-mcp-secret": N8N_SECRET })
+        "Content-Type": "application/json"
       },
       body: JSON.stringify(args)
     });

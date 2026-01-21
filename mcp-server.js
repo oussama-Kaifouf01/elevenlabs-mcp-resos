@@ -1,100 +1,101 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import fetch from "node-fetch";
+import express from "express";
+import { spawn } from "child_process";
+import { v4 as uuidv4 } from "uuid";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
-const N8N_BASE_URL = process.env.N8N_BASE_URL || "http://n8n:5678";
-console.log(N8N_BASE_URL);
-const server = new Server(
-  {
-    name: "reservation-mcp-server",
-    version: "1.0.0",
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
-  }
-);
+const app = express();
+app.use(express.json());
 
-// Define your n8n workflows as MCP tools
-const tools = [
-  {
-    name: "check_availability",
-    description: "Check availability for a reservation date and time",
-    inputSchema: {
-      type: "object",
-      properties: {
-        date: { type: "string", description: "Date in YYYY-MM-DD format" },
-        time: { type: "string", description: "Time in HH:MM format" },
-        partySize: { type: "number", description: "Number of people" },
-        duration: { type: "number", description: "Duration in minutes (optional)" }
-      },
-      required: ["date", "time", "partySize"]
+// Store active MCP server instances
+const mcpServers = new Map();
+
+// Start an MCP server instance
+function startMCPServer() {
+  const serverProcess = spawn("node", ["mcp-server.js"], {
+    stdio: ["pipe", "pipe", "inherit"],
+    env: {
+      ...process.env,
+      N8N_BASE_URL: process.env.N8N_BASE_URL,
+      N8N_SECRET: process.env.N8N_SECRET
     }
-  }
-];
+  });
+
+  return serverProcess;
+}
+
+// Initialize MCP server on startup
+let mcpProcess = startMCPServer();
 
 // List available tools
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools };
+app.post("/tools/list", (req, res) => {
+  // Return the tools your MCP server exposes
+  res.json({
+    tools: [
+      {
+        name: "check_availability",
+        description: "Check availability for a reservation date and time",
+        inputSchema: {
+          type: "object",
+          properties: {
+            date: { type: "string", description: "Date in YYYY-MM-DD format" },
+            time: { type: "string", description: "Time in HH:MM format" },
+            partySize: { type: "number", description: "Number of people" },
+            duration: { type: "number", description: "Duration in minutes (optional)" }
+          },
+          required: ["date", "time", "partySize"]
+        }
+      }
+    ]
+  });
 });
 
-// Handle tool calls - route to n8n webhooks
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+// Call a tool
+app.post("/tools/call", async (req, res) => {
+  const { name, arguments: args } = req.body;
 
   try {
-    // Map tool names to n8n webhook endpoints
+    const N8N_BASE_URL = process.env.N8N_BASE_URL;
+    const N8N_SECRET = process.env.N8N_SECRET;
+
     const webhookMap = {
       check_availability: "/webhook-test/impasto48/checkAvailablity"
     };
 
     const webhookPath = webhookMap[name];
     if (!webhookPath) {
-      throw new Error(`Unknown tool: ${name}`);
+      return res.status(400).json({ error: `Unknown tool: ${name}` });
     }
 
     const response = await fetch(`${N8N_BASE_URL}${webhookPath}`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        ...(N8N_SECRET && { "x-mcp-secret": N8N_SECRET })
       },
       body: JSON.stringify(args)
     });
 
     if (!response.ok) {
-      throw new Error(`N8N webhook returned ${response.status}`);
+      return res.status(response.status).json({ error: `N8N webhook failed` });
     }
 
     const result = await response.json();
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(result, null, 2)
-        }
-      ]
-    };
+    res.json({ result });
   } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error calling ${name}: ${error.message}`,
-          isError: true
-        }
-      ]
-    };
+    res.status(500).json({ error: error.message });
   }
 });
 
-// Start the server
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("N8N MCP Server started");
-}
+// Health check
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
 
-main().catch(console.error);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`MCP HTTP Wrapper running on port ${PORT}`);
+  console.log(`Available endpoints:`);
+  console.log(`  POST /tools/list - List available tools`);
+  console.log(`  POST /tools/call - Call a tool`);
+  console.log(`  GET /health - Health check`);
+});

@@ -1,98 +1,109 @@
 import express from "express";
-import { spawn } from "child_process";
-import { v4 as uuidv4 } from "uuid";
+import fetch from "node-fetch";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import {
+  Server,
+  Tool,
+} from "@modelcontextprotocol/sdk/server/index.js";
 
 const app = express();
 app.use(express.json());
 
-// Store active MCP server instances
-const mcpServers = new Map();
+/**
+ * =========================
+ * MCP SERVER DEFINITION
+ * =========================
+ */
 
-// Start an MCP server instance
-function startMCPServer() {
-  const serverProcess = spawn("node", ["mcp-server.js"], {
-    stdio: ["pipe", "pipe", "inherit"],
-    env: {
-      ...process.env,
-      N8N_BASE_URL: process.env.N8N_BASE_URL
-    }
-  });
+const server = new Server(
+  {
+    name: "reservation-mcp",
+    version: "1.0.0",
+  },
+  {
+    capabilities: {
+      tools: {},
+    },
+  }
+);
 
-  return serverProcess;
-}
+/**
+ * =========================
+ * TOOL DEFINITION
+ * =========================
+ */
 
-// Initialize MCP server on startup
-let mcpProcess = startMCPServer();
-
-// List available tools
-app.post("/tools/list", (req, res) => {
-  // Return the tools your MCP server exposes
-  res.json({
-    tools: [
-      {
-        name: "check_availability",
-        description: "Check availability for a reservation date and time",
-        inputSchema: {
-          type: "object",
-          properties: {
-            date: { type: "string", description: "Date in YYYY-MM-DD format" },
-            time: { type: "string", description: "Time in HH:MM format" },
-            partySize: { type: "number", description: "Number of people" },
-            duration: { type: "number", description: "Duration in minutes (optional)" }
-          },
-          required: ["date", "time", "partySize"]
-        }
-      }
-    ]
-  });
-});
-
-// Call a tool
-app.post("/tools/call", async (req, res) => {
-  const { name, arguments: args } = req.body;
-
-  try {
-    const N8N_BASE_URL = process.env.N8N_BASE_URL;
-
-    const webhookMap = {
-      check_availability: "/webhook/impasto48/checkAvailablity"
-    };
-
-    const webhookPath = webhookMap[name];
-    if (!webhookPath) {
-      return res.status(400).json({ error: `Unknown tool: ${name}` });
-    }
-
-    const response = await fetch(`${N8N_BASE_URL}${webhookPath}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
+server.tool(
+  "check_availability",
+  {
+    description: "Check availability for a reservation date and time",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: { type: "string" },
+        time: { type: "string" },
+        partySize: { type: "number" },
+        duration: { type: "number" },
       },
-      body: JSON.stringify(args)
-    });
+      required: ["date", "time", "partySize"],
+    },
+  },
+  async (args) => {
+    const N8N_BASE_URL = process.env.N8N_BASE_URL;
+    if (!N8N_BASE_URL) {
+      throw new Error("N8N_BASE_URL is not set");
+    }
+
+    const response = await fetch(
+      `${N8N_BASE_URL}/webhook/impasto48/checkAvailablity`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-from-mcp": "true",
+        },
+        body: JSON.stringify(args),
+      }
+    );
 
     if (!response.ok) {
-      return res.status(response.status).json({ error: `N8N webhook failed` });
+      throw new Error(`n8n webhook failed (${response.status})`);
     }
 
-    const result = await response.json();
-    res.json({ result });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    return await response.json();
   }
+);
+
+/**
+ * =========================
+ * MCP SSE ENDPOINT
+ * =========================
+ */
+
+app.get("/mcp", async (req, res) => {
+  const transport = new SSEServerTransport("/mcp", res);
+  await server.connect(transport);
 });
 
-// Health check
-app.get("/health", (req, res) => {
+/**
+ * =========================
+ * HEALTH CHECK
+ * =========================
+ */
+
+app.get("/health", (_, res) => {
   res.json({ status: "ok" });
 });
 
+/**
+ * =========================
+ * START SERVER
+ * =========================
+ */
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`MCP HTTP Wrapper running on port ${PORT}`);
-  console.log(`Available endpoints:`);
-  console.log(`  POST /tools/list - List available tools`);
-  console.log(`  POST /tools/call - Call a tool`);
-  console.log(`  GET /health - Health check`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ MCP Server running`);
+  console.log(`➡ SSE endpoint: /mcp`);
+  console.log(`➡ Health check: /health`);
 });

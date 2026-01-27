@@ -4,6 +4,8 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
+  GetServerInfoRequestSchema,
+  GetInstructionsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
 const app = express();
@@ -11,7 +13,7 @@ app.use(express.json());
 
 /**
  * =========================
- * MCP SERVER
+ * MCP SERVER SETUP
  * =========================
  */
 const server = new Server(
@@ -39,6 +41,40 @@ const server = new Server(
     },
   }
 );
+
+/**
+ * =========================
+ * SERVER INFO (REQUIRED BY CURSOR)
+ * =========================
+ */
+server.setRequestHandler(GetServerInfoRequestSchema, async () => {
+  return {
+    name: "reservation-mcp",
+    version: "1.0.0",
+    description: "MCP server for restaurant availability via n8n",
+    capabilities: {
+      tools: true,
+    },
+  };
+});
+
+/**
+ * =========================
+ * INSTRUCTIONS (REQUIRED BY CURSOR)
+ * =========================
+ */
+server.setRequestHandler(GetInstructionsRequestSchema, async () => {
+  return {
+    instructions: `
+You are an assistant connected to a restaurant reservation system.
+
+You have access to one tool:
+- check_availability: checks if a table is available for a given date, time, and party size.
+
+When the user asks about availability, always use the tool.
+`.trim(),
+  };
+});
 
 /**
  * =========================
@@ -128,7 +164,7 @@ app.get("/mcp", async (req, res) => {
 
 /**
  * =========================
- * HEALTH
+ * HEALTH CHECK
  * =========================
  */
 app.get("/health", (_, res) => {
@@ -137,11 +173,12 @@ app.get("/health", (_, res) => {
 
 /**
  * =========================
- * START
+ * START SERVER
  * =========================
  */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log("✅ MCP Server running");
   console.log("➡ SSE endpoint: /mcp");
+  console.log("➡ Health check: /health");
 });

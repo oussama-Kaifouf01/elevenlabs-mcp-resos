@@ -1,17 +1,13 @@
 import express from "express";
-import fetch from "node-fetch";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import {
-  Server,
-  Tool,
-} from "@modelcontextprotocol/sdk/server/index.js";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 
 const app = express();
 app.use(express.json());
 
 /**
  * =========================
- * MCP SERVER DEFINITION
+ * MCP SERVER
  * =========================
  */
 
@@ -29,7 +25,7 @@ const server = new Server(
 
 /**
  * =========================
- * TOOL DEFINITION
+ * TOOL: check_availability
  * =========================
  */
 
@@ -67,7 +63,8 @@ server.tool(
     );
 
     if (!response.ok) {
-      throw new Error(`n8n webhook failed (${response.status})`);
+      const text = await response.text();
+      throw new Error(`n8n webhook failed (${response.status}): ${text}`);
     }
 
     return await response.json();
@@ -81,8 +78,17 @@ server.tool(
  */
 
 app.get("/mcp", async (req, res) => {
-  const transport = new SSEServerTransport("/mcp", res);
-  await server.connect(transport);
+  try {
+    const transport = new SSEServerTransport("/mcp", res);
+    await server.connect(transport);
+
+    req.on("close", () => {
+      transport.close();
+    });
+  } catch (err) {
+    console.error("MCP connection error:", err);
+    res.end();
+  }
 });
 
 /**
@@ -103,7 +109,7 @@ app.get("/health", (_, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ MCP Server running`);
-  console.log(`➡ SSE endpoint: /mcp`);
-  console.log(`➡ Health check: /health`);
+  console.log("✅ MCP Server running");
+  console.log("➡ SSE endpoint: /mcp");
+  console.log("➡ Health check: /health");
 });

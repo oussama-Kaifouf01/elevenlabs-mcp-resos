@@ -190,7 +190,7 @@ app.get("/", (_, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("✅ MCP Server running (with debug logging)");
+  console.log("✅ MCP Server running (latest SDK)");
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log(`📍 Port: ${PORT}`);
   console.log(`🔗 SSE endpoint: http://0.0.0.0:${PORT}/mcp`);

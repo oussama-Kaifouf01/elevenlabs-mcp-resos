@@ -126,31 +126,62 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 
 /**
  * =========================
- * MCP SSE ENDPOINT
+ * MCP SSE ENDPOINT (GET)
  * =========================
  */
 app.get("/mcp", async (req, res) => {
-  console.log("[SSE] New connection attempt from:", req.ip);
-  console.log("[SSE] User-Agent:", req.get("user-agent"));
+  console.log("[SSE-GET] New connection attempt from:", req.ip);
+  console.log("[SSE-GET] User-Agent:", req.get("user-agent"));
 
   try {
     const transport = new SSEServerTransport("/mcp", res);
-    console.log("[SSE] Transport created");
+    console.log("[SSE-GET] Transport created");
     
     await server.connect(transport);
-    console.log("[SSE] Server connected to transport");
+    console.log("[SSE-GET] Server connected to transport");
 
     req.on("close", () => {
-      console.log("[SSE] Connection closed");
+      console.log("[SSE-GET] Connection closed");
       transport.close();
     });
 
     req.on("error", (err) => {
-      console.error("[SSE] Connection error:", err.message);
+      console.error("[SSE-GET] Connection error:", err.message);
       transport.close();
     });
   } catch (err) {
-    console.error("[SSE] Connection error:", err);
+    console.error("[SSE-GET] Connection error:", err);
+    res.status(500).end();
+  }
+});
+
+/**
+ * =========================
+ * MCP SSE ENDPOINT (POST - Fallback)
+ * =========================
+ */
+app.post("/mcp", async (req, res) => {
+  console.log("[SSE-POST] New connection attempt from:", req.ip);
+  console.log("[SSE-POST] User-Agent:", req.get("user-agent"));
+
+  try {
+    const transport = new SSEServerTransport("/mcp", res);
+    console.log("[SSE-POST] Transport created");
+    
+    await server.connect(transport);
+    console.log("[SSE-POST] Server connected to transport");
+
+    req.on("close", () => {
+      console.log("[SSE-POST] Connection closed");
+      transport.close();
+    });
+
+    req.on("error", (err) => {
+      console.error("[SSE-POST] Connection error:", err.message);
+      transport.close();
+    });
+  } catch (err) {
+    console.error("[SSE-POST] Connection error:", err);
     res.status(500).end();
   }
 });

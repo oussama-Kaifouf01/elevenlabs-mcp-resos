@@ -1,16 +1,19 @@
 import express from "express";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import {
+  ListToolsRequestSchema,
+  CallToolRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 
 const app = express();
 app.use(express.json());
 
 /**
  * =========================
- * MCP SERVER SETUP
+ * MCP SERVER
  * =========================
  */
-
 const server = new Server(
   {
     name: "reservation-mcp",
@@ -42,7 +45,7 @@ const server = new Server(
  * TOOLS: LIST
  * =========================
  */
-server.setRequestHandler("tools/list", async () => {
+server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
@@ -68,7 +71,7 @@ server.setRequestHandler("tools/list", async () => {
  * TOOLS: CALL
  * =========================
  */
-server.setRequestHandler("tools/call", async (req) => {
+server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const { name, arguments: args } = req;
 
   if (name !== "check_availability") {
@@ -125,7 +128,7 @@ app.get("/mcp", async (req, res) => {
 
 /**
  * =========================
- * HEALTH CHECK
+ * HEALTH
  * =========================
  */
 app.get("/health", (_, res) => {
@@ -134,12 +137,11 @@ app.get("/health", (_, res) => {
 
 /**
  * =========================
- * START SERVER
+ * START
  * =========================
  */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log("✅ MCP Server running");
   console.log("➡ SSE endpoint: /mcp");
-  console.log("➡ Health check: /health");
 });

@@ -1,6 +1,6 @@
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
 const app = express();
 app.use(express.json());
@@ -70,16 +70,20 @@ server.tool(
 
 /**
  * =========================
- * MCP HTTP ENDPOINT
+ * MCP SSE ENDPOINT
  * =========================
  */
-app.post("/mcp", async (req, res) => {
+app.get("/mcp", async (req, res) => {
   try {
-    const transport = new StreamableHTTPServerTransport(req, res);
+    const transport = new SSEServerTransport("/mcp", res);
     await server.connect(transport);
+
+    req.on("close", () => {
+      transport.close();
+    });
   } catch (err) {
     console.error("MCP connection error:", err);
-    res.status(500).json({ error: "MCP connection failed" });
+    res.end();
   }
 });
 
@@ -99,7 +103,7 @@ app.get("/health", (_, res) => {
  */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
-  console.log("✅ MCP Server running");
-  console.log(`➡ HTTP endpoint: http://0.0.0.0:${PORT}/mcp`);
+  console.log("✅ MCP Server running (SSE)");
+  console.log(`➡ SSE endpoint: http://0.0.0.0:${PORT}/mcp`);
   console.log(`➡ Health check: http://0.0.0.0:${PORT}/health`);
 });

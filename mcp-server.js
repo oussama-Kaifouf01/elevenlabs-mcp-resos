@@ -1,189 +1,168 @@
 import express from "express";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import {
-  ListToolsRequestSchema,
-  CallToolRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import cors from "cors";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
 
+/**
+ * =========================
+ * SERVER FACTORY
+ * =========================
+ * Creates a new MCP server instance per request (stateless)
+ */
+const getServer = () => {
+  const server = new McpServer(
+    {
+      name: "reservation-mcp",
+      version: "1.0.0",
+    },
+    {
+      capabilities: {
+        tools: {},
+      },
+    }
+  );
+
+  // Register the check_availability tool
+  server.registerTool(
+    "check_availability",
+    {
+      description: "Check availability for a reservation date and time",
+      inputSchema: {
+        date: z.string().describe("Reservation date (YYYY-MM-DD format)"),
+        time: z.string().describe("Reservation time (HH:MM format, 24-hour)"),
+        partySize: z.number().describe("Number of people in the party"),
+        duration: z.number().optional().describe("Duration in minutes (optional, defaults to 120)"),
+      },
+    },
+    async (args) => {
+      console.log("[check_availability] Called with:", args);
+
+      const N8N_BASE_URL = process.env.N8N_BASE_URL;
+      if (!N8N_BASE_URL) {
+        console.error("[check_availability] N8N_BASE_URL not set");
+        return {
+          content: [{ type: "text", text: "Error: N8N_BASE_URL environment variable is not set" }],
+          isError: true,
+        };
+      }
+
+      try {
+        console.log("[check_availability] Calling n8n at:", N8N_BASE_URL);
+        const response = await fetch(
+          `${N8N_BASE_URL}/webhook/impasto48/checkAvailablity`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-from-mcp": "true",
+            },
+            body: JSON.stringify(args),
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          console.error("[check_availability] n8n error:", response.status, text);
+          return {
+            content: [{ type: "text", text: `n8n webhook failed (${response.status}): ${text}` }],
+            isError: true,
+          };
+        }
+
+        const result = await response.json();
+        console.log("[check_availability] Success:", result);
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (error) {
+        console.error("[check_availability] Exception:", error.message);
+        return {
+          content: [{ type: "text", text: `Error checking availability: ${error.message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  return server;
+};
+
+/**
+ * =========================
+ * EXPRESS APP SETUP
+ * =========================
+ */
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 /**
  * =========================
- * MCP SERVER SETUP
- * =========================
- */
-const server = new Server(
-  {
-    name: "reservation-mcp",
-    version: "1.0.0",
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
-  }
-);
-
-console.log("✅ Server instance created");
-
-/**
- * =========================
- * TOOLS: LIST
- * =========================
- */
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  console.log("[ListTools] Request received");
-  const tools = [
-    {
-      name: "check_availability",
-      description: "Check availability for a reservation date and time",
-      inputSchema: {
-        type: "object",
-        properties: {
-          date: {
-            type: "string",
-            description: "Reservation date (YYYY-MM-DD format)",
-          },
-          time: {
-            type: "string",
-            description: "Reservation time (HH:MM format, 24-hour)",
-          },
-          partySize: {
-            type: "number",
-            description: "Number of people in the party",
-          },
-          duration: {
-            type: "number",
-            description: "Duration in minutes (optional, defaults to 120)",
-          },
-        },
-        required: ["date", "time", "partySize"],
-      },
-    },
-  ];
-  console.log("[ListTools] Returning", tools.length, "tools");
-  return { tools };
-});
-
-/**
- * =========================
- * TOOLS: CALL
- * =========================
- */
-server.setRequestHandler(CallToolRequestSchema, async (req) => {
-  console.log("[CallTool] Request received:", req.params);
-  const { name, arguments: args } = req.params;
-
-  if (name !== "check_availability") {
-    console.error("[CallTool] Unknown tool:", name);
-    throw new Error(`Unknown tool: ${name}`);
-  }
-
-  const N8N_BASE_URL = process.env.N8N_BASE_URL;
-  if (!N8N_BASE_URL) {
-    console.error("[CallTool] N8N_BASE_URL not set");
-    throw new Error("N8N_BASE_URL environment variable is not set");
-  }
-
-  try {
-    console.log("[CallTool] Calling n8n at:", N8N_BASE_URL);
-    const response = await fetch(
-      `${N8N_BASE_URL}/webhook/impasto48/checkAvailablity`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-from-mcp": "true",
-        },
-        body: JSON.stringify(args),
-      }
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("[CallTool] n8n error:", response.status, text);
-      throw new Error(`n8n webhook failed (${response.status}): ${text}`);
-    }
-
-    const result = await response.json();
-    console.log("[CallTool] Success:", result);
-
-    return {
-      type: "text",
-      text: JSON.stringify(result, null, 2),
-    };
-  } catch (error) {
-    console.error("[CallTool] Exception:", error.message);
-    return {
-      type: "text",
-      text: `Error checking availability: ${error.message}`,
-      isError: true,
-    };
-  }
-});
-
-/**
- * =========================
- * MCP SSE ENDPOINT (GET)
- * =========================
- */
-app.get("/mcp", async (req, res) => {
-  console.log("[SSE-GET] New connection attempt from:", req.ip);
-  console.log("[SSE-GET] User-Agent:", req.get("user-agent"));
-
-  try {
-    const transport = new SSEServerTransport("/mcp", res);
-    console.log("[SSE-GET] Transport created");
-    
-    await server.connect(transport);
-    console.log("[SSE-GET] Server connected to transport");
-
-    req.on("close", () => {
-      console.log("[SSE-GET] Connection closed");
-      transport.close();
-    });
-
-    req.on("error", (err) => {
-      console.error("[SSE-GET] Connection error:", err.message);
-      transport.close();
-    });
-  } catch (err) {
-    console.error("[SSE-GET] Connection error:", err);
-    res.status(500).end();
-  }
-});
-
-/**
- * =========================
- * MCP SSE ENDPOINT (POST - Fallback)
+ * MCP ENDPOINT (POST) - Streamable HTTP
  * =========================
  */
 app.post("/mcp", async (req, res) => {
-  console.log("[SSE-POST] New connection attempt from:", req.ip);
-  console.log("[SSE-POST] User-Agent:", req.get("user-agent"));
+  console.log("[MCP-POST] Request received from:", req.ip);
+
+  const server = getServer();
 
   try {
-    const transport = new SSEServerTransport("/mcp", res);
-    console.log("[SSE-POST] Transport created");
-    
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined, // Stateless: no session management
+    });
+
     await server.connect(transport);
-    console.log("[SSE-POST] Server connected to transport");
+    await transport.handleRequest(req, res, req.body);
 
-    req.on("close", () => {
-      console.log("[SSE-POST] Connection closed");
+    res.on("close", () => {
+      console.log("[MCP-POST] Request closed");
       transport.close();
+      server.close();
     });
-
-    req.on("error", (err) => {
-      console.error("[SSE-POST] Connection error:", err.message);
-      transport.close();
-    });
-  } catch (err) {
-    console.error("[SSE-POST] Connection error:", err);
-    res.status(500).end();
+  } catch (error) {
+    console.error("[MCP-POST] Error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32603,
+          message: "Internal server error",
+        },
+        id: null,
+      });
+    }
   }
+});
+
+/**
+ * =========================
+ * MCP ENDPOINT (GET/DELETE) - Method Not Allowed
+ * =========================
+ */
+app.get("/mcp", (req, res) => {
+  console.log("[MCP-GET] Method not allowed");
+  res.status(405).json({
+    jsonrpc: "2.0",
+    error: {
+      code: -32000,
+      message: "Method not allowed.",
+    },
+    id: null,
+  });
+});
+
+app.delete("/mcp", (req, res) => {
+  console.log("[MCP-DELETE] Method not allowed");
+  res.status(405).json({
+    jsonrpc: "2.0",
+    error: {
+      code: -32000,
+      message: "Method not allowed.",
+    },
+    id: null,
+  });
 });
 
 /**
@@ -221,11 +200,21 @@ app.get("/", (_, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("✅ MCP Server running (latest SDK)");
+  console.log("✅ MCP Stateless Streamable HTTP Server");
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log(`📍 Port: ${PORT}`);
-  console.log(`🔗 SSE endpoint: http://0.0.0.0:${PORT}/mcp`);
+  console.log(`🔗 MCP endpoint: http://0.0.0.0:${PORT}/mcp`);
   console.log(`❤️  Health check: http://0.0.0.0:${PORT}/health`);
   console.log(`📄 Root: http://0.0.0.0:${PORT}/`);
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+});
+
+/**
+ * =========================
+ * SHUTDOWN HANDLER
+ * =========================
+ */
+process.on("SIGINT", () => {
+  console.log("Shutting down server...");
+  process.exit(0);
 });

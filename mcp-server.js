@@ -86,6 +86,72 @@ const getServer = () => {
     }
   );
 
+  // Register the create_booking tool
+  server.registerTool(
+    "create_booking",
+    {
+      description: "Create a new restaurant booking/reservation",
+      inputSchema: {
+        full_name: z.string().describe("Customer's full name"),
+        table: z.string().describe("Table ID"),
+        phone_number: z.string().describe("Customer's phone number (e.g. +353861234567)"),
+        people: z.number().describe("Number of people in the party"),
+        date: z.string().describe("Reservation date (YYYY-MM-DD format)"),
+        time: z.string().describe("Reservation time (HH:MM format, 24-hour)"),
+        comment: z.string().optional().describe("Special requests or comments (optional)"),
+      },
+    },
+    async (args) => {
+      console.log("[create_booking] Called with:", args);
+
+      const N8N_BASE_URL = process.env.N8N_BASE_URL;
+      if (!N8N_BASE_URL) {
+        console.error("[create_booking] N8N_BASE_URL not set");
+        return {
+          content: [{ type: "text", text: "Error: N8N_BASE_URL environment variable is not set" }],
+          isError: true,
+        };
+      }
+
+      try {
+        console.log("[create_booking] Calling n8n at:", N8N_BASE_URL);
+        const response = await fetch(
+          `${N8N_BASE_URL}/webhook/impasto48/createBooking`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-from-mcp": "true",
+            },
+            body: JSON.stringify(args),
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          console.error("[create_booking] n8n error:", response.status, text);
+          return {
+            content: [{ type: "text", text: `n8n webhook failed (${response.status}): ${text}` }],
+            isError: true,
+          };
+        }
+
+        const result = await response.json();
+        console.log("[create_booking] Success:", result);
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (error) {
+        console.error("[create_booking] Exception:", error.message);
+        return {
+          content: [{ type: "text", text: `Error creating booking: ${error.message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
   return server;
 };
 

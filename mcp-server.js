@@ -152,6 +152,67 @@ const getServer = () => {
     }
   );
 
+  // Register the cancel_booking tool
+  server.registerTool(
+    "cancel_booking",
+    {
+      description: "Cancel an existing restaurant booking by customer name and date",
+      inputSchema: {
+        full_name: z.string().describe("Customer's full name as used in the original booking"),
+        date: z.string().describe("Reservation date to cancel (YYYY-MM-DD format)"),
+      },
+    },
+    async (args) => {
+      console.log("[cancel_booking] Called with:", args);
+
+      const N8N_BASE_URL = process.env.N8N_BASE_URL;
+      if (!N8N_BASE_URL) {
+        console.error("[cancel_booking] N8N_BASE_URL not set");
+        return {
+          content: [{ type: "text", text: "Error: N8N_BASE_URL environment variable is not set" }],
+          isError: true,
+        };
+      }
+
+      try {
+        console.log("[cancel_booking] Calling n8n at:", N8N_BASE_URL);
+        const response = await fetch(
+          `${N8N_BASE_URL}/webhook/febbbaa3-2e6e-4daf-94b9-a2a414bd0a35`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-from-mcp": "true",
+            },
+            body: JSON.stringify(args),
+          }
+        );
+
+        if (!response.ok) {
+          const text = await response.text();
+          console.error("[cancel_booking] n8n error:", response.status, text);
+          return {
+            content: [{ type: "text", text: `n8n webhook failed (${response.status}): ${text}` }],
+            isError: true,
+          };
+        }
+
+        const result = await response.json();
+        console.log("[cancel_booking] Success:", result);
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (error) {
+        console.error("[cancel_booking] Exception:", error.message);
+        return {
+          content: [{ type: "text", text: `Error cancelling booking: ${error.message}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+
   return server;
 };
 
